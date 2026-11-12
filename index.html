@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#10131b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gym Tracker">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Gym Tracker — дневник тренировок</title>
+<style>
+:root{color-scheme:dark;--bg:#090c12;--card:#151b27;--muted:#9aa6bb;--line:#293346;--blue:#4f8cff;--green:#31c987;--red:#ff737b}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#18243a 0,#090c12 55%);color:#f2f5fb;font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding-bottom:env(safe-area-inset-bottom)}
+.wrap{max-width:760px;margin:auto;padding:14px}.hero{padding:20px 16px;margin:4px 0 14px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(120deg,#243d65,#111827 75%)}h1{font-size:25px;margin:0}h2{font-size:18px;margin:0 0 12px}
+nav{display:flex;gap:7px;position:sticky;top:0;z-index:5;background:#090c12dd;backdrop-filter:blur(12px);padding:7px 0 10px}
+nav button{flex:1;padding:11px 5px;font-size:14px;background:var(--card);border:1px solid var(--line);color:#eaf0fa}
+nav button.active{background:var(--blue);border-color:var(--blue);color:white}
+button{border:0;border-radius:11px;background:var(--blue);color:white;font-weight:700;padding:12px 14px;font-size:15px;cursor:pointer}
+button.secondary{background:#293346}button.danger{background:#51252e;color:#ffc5ca}button.small{padding:7px 10px;font-size:13px}
+.card{background:#151b27eF;border:1px solid var(--line);border-radius:16px;padding:14px;margin:0 0 12px}
+label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px}
+input,select{width:100%;background:#0d121c;color:#f4f6fa;border:1px solid #354158;border-radius:10px;padding:11px;font-size:16px;min-width:0}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.full{grid-column:1/-1}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px}.muted{color:var(--muted)}.tiny{font-size:12px}.big{font-size:27px;font-weight:800}
+.week{display:flex;justify-content:space-between;align-items:center;margin:8px 2px 12px}
+.day{margin-bottom:10px}.dayhead{display:flex;justify-content:space-between;margin-bottom:8px;font-weight:700}
+.exercise{border-top:1px solid var(--line);padding:9px 0}.chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+.chip{background:#273449;border-radius:99px;padding:4px 9px;font-size:12px}
+.setrow{display:grid;grid-template-columns:24px 1fr 1fr 34px;gap:6px;align-items:center;margin:6px 0}
+.setrow input{padding:9px}.sethead{display:grid;grid-template-columns:24px 1fr 1fr 34px;gap:6px;font-size:11px;color:var(--muted)}
+.actions{display:flex;gap:8px;margin-top:9px}.actions>*{flex:1}
+table{width:100%;border-collapse:collapse;font-size:14px}td,th{text-align:left;padding:9px 5px;border-bottom:1px solid var(--line)}th{font-size:11px;color:var(--muted)}td.right,th.right{text-align:right}
+canvas{width:100%;height:220px;display:block}.notice{background:#17283a;border:1px solid #294867;border-radius:12px;padding:10px;margin-bottom:12px;font-size:13px}
+.empty{color:var(--muted);font-size:14px;padding:8px 0}.hidden{display:none!important}
+@media(max-width:430px){.wrap{padding:10px}.hero{padding:17px 13px}.grid{gap:7px}.card{padding:12px}}
+</style>
+</head>
+<body><main class="wrap">
+<header class="hero"><h1>🏋️ Gym Tracker</h1><div class="muted">Твой дневник тренировок — работает офлайн</div></header>
+<div class="notice" id="offlineNotice">Данные сохраняются на этом устройстве. Интернет для ведения дневника не нужен.</div>
+<nav><button data-tab="train" class="active">🏋️ Тренировки</button><button data-tab="weight">⚖️ Вес</button><button data-tab="strength">💪 Сила</button></nav>
+<section id="train"></section><section id="weight" class="hidden"></section><section id="strength" class="hidden"></section>
+<section class="card">
+<h2>Резервная копия</h2><p class="muted tiny">Экспортируй данные в файл, чтобы перенести их на другое устройство или восстановить позже.</p>
+<div class="actions"><button class="secondary" id="exportBtn">Экспорт данных</button><button class="secondary" id="importBtn">Импорт данных</button></div><input id="importFile" type="file" accept="application/json" class="hidden">
+</section>
+<p class="muted tiny" style="text-align:center">Gym Tracker · локальное хранение · версия офлайн</p>
+</main>
+<script>
+const DB_NAME='gym-tracker-local', DB_VERSION=1;
+let db, tab='train', weekStart=monday(new Date());
+const $=s=>document.querySelector(s);
+const pad=n=>String(n).padStart(2,'0');
+const iso=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const fromISO=s=>{let [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
+const monday=d=>{let x=new Date(d.getFullYear(),d.getMonth(),d.getDate());x.setDate(x.getDate()-(x.getDay()+6)%7);return x};
+const plus=(d,n)=>{let x=new Date(d);x.setDate(x.getDate()+n);return x};
+const fmtDate=d=>`${d.getDate()} ${['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'][d.getMonth()]}`;
+const fmt=n=>Number(n).toLocaleString('ru-RU',{maximumFractionDigits:1});
+function openDB(){return new Promise((resolve,reject)=>{let r=indexedDB.open(DB_NAME,DB_VERSION);r.onupgradeneeded=()=>{let d=r.result;d.createObjectStore('sets',{keyPath:'id',autoIncrement:true});d.createObjectStore('body',{keyPath:'day'});};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+function all(store){return new Promise((resolve,reject)=>{let r=db.transaction(store).objectStore(store).getAll();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+function put(store,value){return new Promise((resolve,reject)=>{let t=db.transaction(store,'readwrite');let r=t.objectStore(store).put(value);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+function add(store,value){return new Promise((resolve,reject)=>{let t=db.transaction(store,'readwrite');let r=t.objectStore(store).add(value);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+function del(store,key){return new Promise((resolve,reject)=>{let t=db.transaction(store,'readwrite');let r=t.objectStore(store).delete(key);r.onsuccess=()=>resolve();r.onerror=()=>reject(r.error)})}
+function replaceAll(store,items){return new Promise((resolve,reject)=>{let t=db.transaction(store,'readwrite'),s=t.objectStore(store);s.clear();items.forEach(x=>s.put(x));t.oncomplete=resolve;t.onerror=()=>reject(t.error)})}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function volume(x){return x.reps*(x.weight>0?x.weight:1)}
+function pct(a,b){if(!b)return a?'новое':'—';let p=(a-b)/b*100;return (p>0?'+':'')+p.toFixed(1)+'%'}
+async function render(){if(tab==='train')await renderTrain();if(tab==='weight')await renderWeight();if(tab==='strength')await renderStrength()}
+function switchTab(t){tab=t;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));['train','weight','strength'].forEach(x=>$('#'+x).classList.toggle('hidden',x!==t));render()}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+async function renderTrain(){
+ let sets=await all('sets'),end=plus(weekStart,6),prev=plus(weekStart,-7);
+ let html=`<div class="week"><button class="secondary small" id="prevWeek">← Назад</button><b>${fmtDate(weekStart)} – ${fmtDate(end)}</b><button class="secondary small" id="nextWeek">Вперёд →</button></div>`;
+ for(let i=0;i<7;i++){let d=plus(weekStart,i),day=iso(d),items={};sets.filter(x=>x.day===day).forEach(x=>(items[x.exercise]??=[]).push(x));
+ html+=`<div class="card day"><div class="dayhead"><b>${['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье'][i]}</b><span class="muted">${fmtDate(d)}</span></div>`;
+ if(!Object.keys(items).length)html+='<div class="empty">Нет записей</div>';
+ for(let [name,arr] of Object.entries(items)){html+=`<div class="exercise"><div class="row"><b>${esc(name)}</b><button class="danger small" data-delete-ex="${encodeURIComponent(day+'|'+name)}">Удалить</button></div><div class="chips">${arr.map((x,j)=>`<span class="chip">${j+1}) ${x.reps} повт. × ${fmt(x.weight)} кг</span>`).join('')}</div></div>`}
+ html+=`<details><summary style="color:#78aaff;padding:10px 0;cursor:pointer">＋ Записать тренировку</summary><form data-workout="${day}"><label>Упражнение</label><input name="exercise" maxlength="60" placeholder="Жим лёжа" required><div class="sethead"><span>№</span><span>Повторы</span><span>Вес, кг</span><span></span></div><div class="sets">${setRow(1)}${setRow(2)}${setRow(3)}</div><div class="actions"><button type="button" class="secondary" data-add>＋ Подход</button><button>Сохранить</button></div></form></details></div>`}
+ $('#train').innerHTML=html;
+ $('#prevWeek').onclick=()=>{weekStart=plus(weekStart,-7);renderTrain()};$('#nextWeek').onclick=()=>{weekStart=plus(weekStart,7);renderTrain()};
+}
+function setRow(n){return `<div class="setrow"><span class="muted">${n}</span><input name="reps" type="number" min="1" max="1000" placeholder="Повторы"><input name="weight" type="number" min="0" max="1000" step=".1" value="0"><button type="button" class="danger small" data-rm>×</button></div>`}
+document.addEventListener('click',async e=>{let b=e.target.closest('button');if(!b)return;
+ if(b.dataset.add!==undefined){let box=b.closest('form').querySelector('.sets');box.insertAdjacentHTML('beforeend',setRow(box.children.length+1))}
+ if(b.dataset.rm!==undefined){let row=b.closest('.setrow');if(row.parentElement.children.length>1)row.remove()}
+ if(b.dataset.deleteEx){let [day,name]=decodeURIComponent(b.dataset.deleteEx).split('|');for(let x of await all('sets'))if(x.day===day&&x.exercise===name)await del('sets',x.id);renderTrain()}
+ if(b.dataset.deleteBody){await del('body',b.dataset.deleteBody);renderWeight()}
+});
+document.addEventListener('submit',async e=>{if(e.target.matches('[data-workout]')){e.preventDefault();let f=e.target,ex=f.exercise.value.trim().replace(/\s+/g,' ');if(!ex)return;let rows=[...f.querySelectorAll('.setrow')],n=0;for(let r of rows){let reps=Number(r.querySelector('[name=reps]').value),weight=Number(r.querySelector('[name=weight]').value||0);if(reps>0&&Number.isFinite(weight)&&weight>=0){await add('sets',{day:f.dataset.workout,exercise:ex.charAt(0).toUpperCase()+ex.slice(1),reps,weight,n:++n})}}if(n){await renderTrain();}}if(e.target.id==='weightForm'){e.preventDefault();let f=e.target;await put('body',{day:f.day.value,kg:Number(f.kg.value)});renderWeight()}});
+async function renderWeight(){let rows=(await all('body')).sort((a,b)=>a.day.localeCompare(b.day));let latest=rows.at(-1),first=rows[0];$('#weight').innerHTML=`<div class="card"><h2>Записать вес</h2><form id="weightForm" class="grid"><div><label>Дата</label><input name="day" type="date" value="${iso(new Date())}" required></div><div><label>Вес, кг</label><input name="kg" type="number" min="20" max="500" step=".1" placeholder="70" required></div><button class="full">Сохранить</button></form></div><div class="card"><h2>Динамика веса</h2>${latest?`<div class="row"><div><div class="muted">Последний вес</div><div class="big">${fmt(latest.kg)} кг</div></div><div class="muted">Изменение: ${fmt(latest.kg-first.kg)} кг</div></div>`:''}<canvas id="weightChart"></canvas></div><div class="card"><h2>История</h2>${rows.length?`<table><tr><th>Дата</th><th class="right">Вес</th><th></th></tr>${rows.slice().reverse().map(x=>`<tr><td>${fmtDate(fromISO(x.day))} ${fromISO(x.day).getFullYear()}</td><td class="right">${fmt(x.kg)} кг</td><td class="right"><button class="danger small" data-delete-body="${x.day}">×</button></td></tr>`).join('')}</table>`:'<div class="empty">Пока нет записей</div>'}</div>`;drawChart('weightChart',rows.map(x=>[x.day,x.kg]),'кг')}
+async function renderStrength(){let rows=(await all('sets')).filter(x=>x.weight>0),weeks={};for(let x of rows){let w=iso(monday(fromISO(x.day)));weeks[w]=Math.max(weeks[w]||0,x.weight*(1+x.reps/30))}let pts=Object.entries(weeks).sort().map(([d,v])=>[d,v]);$('#strength').innerHTML=`<div class="card"><h2>💪 Рост силы</h2><p class="muted tiny">Расчётный максимум по формуле Эпли: вес × (1 + повторы / 30).</p>${pts.length?'<canvas id="strengthChart"></canvas>':'<div class="empty">Добавь упражнения с рабочим весом — здесь появится график.</div>'}</div>`;if(pts.length)drawChart('strengthChart',pts,'кг')}
+function drawChart(id,pts,unit){let c=$('#'+id);if(!c||!pts.length)return;let w=c.clientWidth||320,h=220,dpr=devicePixelRatio||1;c.width=w*dpr;c.height=h*dpr;let x=c.getContext('2d');x.scale(dpr,dpr);let vals=pts.map(p=>p[1]),lo=Math.min(...vals),hi=Math.max(...vals);if(lo===hi){lo-=1;hi+=1}let X=i=>35+(w-50)*(pts.length===1?.5:i/(pts.length-1)),Y=v=>12+(h-42)*(1-(v-lo)/(hi-lo));x.strokeStyle='#354158';x.fillStyle='#9aa6bb';x.font='11px system-ui';for(let i=0;i<5;i++){let y=12+(h-42)*i/4;x.beginPath();x.moveTo(35,y);x.lineTo(w-10,y);x.stroke();x.fillText((hi-(hi-lo)*i/4).toFixed(1),2,y-2)}x.strokeStyle='#4f8cff';x.lineWidth=3;x.beginPath();pts.forEach((p,i)=>i?x.lineTo(X(i),Y(p[1])):x.moveTo(X(i),Y(p[1])));x.stroke();pts.forEach((p,i)=>{x.fillStyle='#78aaff';x.beginPath();x.arc(X(i),Y(p[1]),4,0,Math.PI*2);x.fill()})}
+$('#exportBtn').onclick=async()=>{let data={format:'gym-tracker-backup-v1',sets:await all('sets'),body:await all('body')};let blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='gym-tracker-backup.json';a.click();URL.revokeObjectURL(a.href)};
+$('#importBtn').onclick=()=>$('#importFile').click();
+$('#importFile').onchange=async e=>{let f=e.target.files[0];if(!f)return;try{let d=JSON.parse(await f.text());if(d.format!=='gym-tracker-backup-v1'||!Array.isArray(d.sets)||!Array.isArray(d.body))throw Error();if(confirm('Заменить текущие данные данными из файла?')){await replaceAll('sets',d.sets);await replaceAll('body',d.body);await render();alert('Данные восстановлены')}}catch(_){alert('Не удалось прочитать резервную копию')}e.target.value=''};
+(async()=>{try{db=await openDB();if('serviceWorker'in navigator)await navigator.serviceWorker.register('./sw.js');await render()}catch(e){alert('Ошибка локального хранилища: '+e.message)}})();
+</script></body></html>
